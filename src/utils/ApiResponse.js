@@ -6,3 +6,4 @@ class ApiResponse{
         this.success=statusCode < 400//different different response limit 
     }
 }
+export {ApiResponse}
