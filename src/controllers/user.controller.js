@@ -4,6 +4,7 @@ import { User } from "../models/user.models.js";
 import {uploadOnCloudinary} from "../utils/Cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken"
 
 const generateAccessAndRefreshTokens =  async(userId)=>{
     try {
@@ -23,7 +24,6 @@ const generateAccessAndRefreshTokens =  async(userId)=>{
         throw new ApiError(500,"Something went wrong while generating refresh and access token")
     }
 }
-
 const registerUser= asyncHandler( async(req,res) =>{
     // 1 get user details from frontend
     // 2 validation- not empty
@@ -158,8 +158,8 @@ const logoutUser=asyncHandler(async(req,res)=>{
     await User.findByIdAndUpdate(
         req.user_id,
         {
-            $set:{
-                refreshToken:undefined
+            $unset:{
+                refreshToken:1 //this removes the field from document
             }
         },
         {
