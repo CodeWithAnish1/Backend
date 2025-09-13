@@ -3,6 +3,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.models.js";
 import {uploadOnCloudinary} from "../utils/Cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js";
+import mongoose from "mongoose";
 
 const generateAccessAndRefreshTokens =  async(userId)=>{
     try {
@@ -239,7 +240,7 @@ const updateAccountDetails= asyncHandler(async(req,res)=>{
     if(!fullName || !email){
         throw new ApiError(400,"All fields are required")
     }
-    const user= User.findByIdAndUpdate(
+    const user= await User.findByIdAndUpdate(
         req.user?._id,
         {
             $set :{
@@ -307,11 +308,128 @@ const updateUserCoverImage = asyncHandler(async(req,res)=>{
         new ApiResponse(200,user,"Cover Image Successfully")
     )
 })
+const getUserChannelProfile=asyncHandler(async(req,res)=>{
+    const {username}=req.params
+    if(!username?.trim()){
+        throw new ApiError(400,"username is missing")
+    }
+    const channel=await User.aggregate([
+        {
+            $match:{
+                username:username?.toLowerCase()
+            }
+        },
+        {
+            $lookup:{
+                from:"subscriptions",//subscription model ka export mai plural use karke likha
+                localfield:"_id",
+                foreignField:"channel",//channel kitne logo ne subscribe kiya 
+                as:"subscribers"
+            }
+        },
+        {
+            $lookup:{
+                from:"subscriptions", 
+                localfield:"_id",
+                foreignField:"subscriber",
+                as:"subscribedTo"
+            }
+        },
+        {
+            $addFields:{
+                subscribersCount:{
+                    $size:"$subscribers"
+                },
+                channelSubscribedToCount:{
+                    $size:"$subscribedTo"
+                },
+                isSubscribed:{
+                    $cond:{
+                        if:{$in:[req.user?._id,"$subscribers.subscriber"]},
+                        then:true,
+                        else:false
+                    }
+                }
+            }
+        },
+        {
+            $project:{//means kis kis ko frontend mai show karoge uske flag 1 karo
+                fullName:1,
+                username:1,
+                email:1,
+                subscribersCount:1,
+                channelSubscribedToCount:1,
+                isSubscribed:1,
+                avatar:1,
+                coverImage:1,
+            }
+        }
 
-
-
+    ])
+    if(!channel?.length){
+        throw new ApiError(404,"channel does not exist")
+    }
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(200,channel[0],"User channel fetched Successfully")
+    )
+})
+const getWatchHistory=asyncHandler( async(req,res)=>{
+    const user=await User.aggregate([
+        {
+            $match:{
+                _id:new mongoose.Types.ObjectId(req.user._id) //because mongoose mai string mai id aa jata hai so isse new mongoose karke original format mai lana parta hai 
+            }
+        },
+        {
+            $lookup:{
+                from:"videos",//kaha pe lookup kar rhe ho mai user se videos wale section mai lookup kar rha
+                localField:"watchHistory",//so userschema ka watchHistory lenge usme do uske id rhega, ek video collection ka(ex:105 id) aur ek jisse connect kar raha uska like owner id(ex:5 id)
+                foreignField:"_id",//ye user ka id(ex:5) hai (yhi match karega) 
+                //aur milte hi user ka sab kuchhh ek array mai band hokar connect with videoscollection
+                as:"watchHistory",
+                pipeline:[
+                    {
+                        $lookup:{
+                            from:"users",
+                            localfield:"owner",//(ye videosschema mai hoga)
+                            foreignField:"_id",
+                            as:"owner",
+                            pipeline:[
+                                {
+                                    $project:{
+                                        fullName:1,
+                                        username:1,
+                                        avatar:1
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {//it is for giving the first value ya object for frontend engineer
+                        $addFields:{
+                            owner:{
+                                $first:"$owner"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            user[0].watchHistory,
+            "watchHistory fetched successfully"
+        )
+    )
+})
 export {
-    registerUser,
+    registerUser, 
     loginUser,
     logoutUser,
     refreshAccessToken,
@@ -319,5 +437,7 @@ export {
     getCurrentUser,
     updateAccountDetails,
     updateUserAvatar,
-    updateUserCoverImage
+    updateUserCoverImage,
+    getUserChannelProfile,
+    getWatchHistory
 } 
